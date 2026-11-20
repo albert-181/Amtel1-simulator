@@ -1,0 +1,629 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Amstel 1 ALF Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: full-bleed night scene with a quiet instrument panel on the right; the DMX plan opens as a paper sheet over the scene. Single dark look by choice; the plan sheet is paper on purpose. */
+:root{
+  --night:#07090d;  --panel:#0f131a;  --line:#232a35;  --ink:#dfe4ea;  --mute:#8390a0;
+  --accent:#4aa3ff; --warn:#f0b23c;  --ok:#3ecf8e;
+  --paper:#f4f3ef;  --paper-ink:#16181c; --paper-mute:#6b6f76; --paper-line:#c9c7c0;
+  --lineR:#c2410c;  --lineL:#1d4ed8;
+  --f-ui:"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-num:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+html,body{height:100%}
+[hidden]{display:none!important}
+body{background:var(--night);color:var(--ink);font-family:var(--f-ui);font-size:14px;overflow:hidden;margin:0}
+#app{position:relative;height:100%;display:flex}
+#stage{position:relative;flex:1;min-width:0}
+#stage canvas{display:block;width:100%;height:100%;outline:none}
+#hud{position:absolute;left:16px;top:14px;right:16px;display:flex;flex-wrap:wrap;align-items:flex-start;gap:10px 18px;pointer-events:none;z-index:3}
+#hud .name{display:flex;flex-direction:column;gap:3px}
+#hud h1{margin:0;font-size:17px;font-weight:600;letter-spacing:.02em}
+#hud .sub{color:var(--mute);font-size:12px}
+.tabs{display:flex;gap:4px;pointer-events:auto}
+.pill{display:inline-flex;align-items:center;gap:6px;font:500 11.5px var(--f-num);color:var(--mute);border:1px solid var(--line);background:rgba(15,19,26,.85);border-radius:20px;padding:5px 10px;pointer-events:auto}
+.pill i{width:7px;height:7px;border-radius:50%;background:var(--mute)}
+.pill.live{color:var(--ok)} .pill.live i{background:var(--ok)}
+.pill.wait{color:var(--warn)} .pill.wait i{background:var(--warn)}
+#views{position:absolute;left:16px;bottom:16px;display:flex;flex-wrap:wrap;gap:6px;z-index:3}
+.btn{font:500 12px var(--f-ui);letter-spacing:.06em;text-transform:uppercase;color:var(--ink);background:rgba(15,19,26,.85);border:1px solid var(--line);border-radius:4px;padding:7px 10px;cursor:pointer}
+.btn:hover{border-color:var(--accent)}
+.btn:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.btn.on{border-color:var(--accent);color:var(--accent)}
+#panel{width:320px;flex:none;background:var(--panel);border-left:1px solid var(--line);overflow-y:auto;padding-block:14px 24px;padding-inline:16px;display:flex;flex-direction:column;gap:18px}
+.readout{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.readout div{display:flex;flex-direction:column;gap:2px}
+.readout b{font:500 18px var(--f-num);font-variant-numeric:tabular-nums}
+.readout span{color:var(--mute);font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+#warn{grid-column:1/-1;color:var(--warn);font-size:12px;line-height:1.4}
+fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:9px}
+legend{padding:0;margin-bottom:8px;font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
+.row{display:grid;grid-template-columns:1fr 104px;align-items:center;gap:10px}
+.row label{font-size:13px;min-width:0}
+.row label small{display:block;color:var(--mute);font-size:11px}
+.row input[type=number],.row select{width:100%;box-sizing:border-box;background:var(--night);color:var(--ink);border:1px solid var(--line);border-radius:3px;padding:5px 6px;font:13px var(--f-num);font-variant-numeric:tabular-nums}
+.row input[type=range]{width:100%;accent-color:var(--accent)}
+.row input[type=color]{width:100%;height:28px;padding:0;border:1px solid var(--line);border-radius:3px;background:var(--night)}
+.note{color:var(--mute);font-size:11.5px;line-height:1.45;margin:0}
+#srcStatus{font:12px var(--f-num);color:var(--mute);line-height:1.5}
+#togglePanel{display:none}
+
+/* DMX plan sheet */
+#plan{position:absolute;inset:72px 0 0 0;z-index:2;background:var(--paper);color:var(--paper-ink);overflow:auto;padding-block:16px 24px;padding-inline:16px;color-scheme:light}
+#plan .sheetbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+#plan .sheetbar .btn{color:var(--paper-ink);background:#fff;border-color:var(--paper-line)}
+#plan .sheetbar .btn:hover{border-color:var(--paper-ink)}
+#plan .hint{font-size:12px;color:var(--paper-mute)}
+.svgwrap{overflow-x:auto;border:1px solid var(--paper-line);background:#fff}
+.svgwrap svg{display:block}
+#patch{margin-top:18px;overflow-x:auto}
+#patch table{border-collapse:collapse;font:12px var(--f-num);font-variant-numeric:tabular-nums;min-width:640px}
+#patch th{font:600 11px var(--f-ui);letter-spacing:.08em;text-transform:uppercase;color:var(--paper-mute);text-align:left;border-bottom:1.5px solid var(--paper-ink);padding:6px 10px}
+#patch td{padding:4px 10px;border-bottom:1px solid #e3e1db}
+#patch td.r{color:var(--lineR);font-weight:500} #patch td.l{color:var(--lineL);font-weight:500}
+@media (max-width:760px){
+  #app{flex-direction:column}
+  #panel{width:auto;max-height:46%;border-left:0;border-top:1px solid var(--line)}
+  #panel.closed{display:none}
+  #togglePanel{display:inline-block}
+  #plan{inset:110px 0 0 0}
+}
+</style>
+
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+    <div id="hud">
+      <div class="name">
+        <h1>Amstel 1 ALF Simulator</h1>
+        <div class="sub">102 × Beam F12 Multi Color, 25° · photometry from the F12 LDT files</div>
+      </div>
+      <div class="tabs">
+        <button class="btn on" id="tab3d" type="button">3D view</button>
+        <button class="btn" id="tabPlan" type="button">DMX plan</button>
+      </div>
+      <span class="pill" id="netPill"><i></i><span id="netText">Built-in effects</span></span>
+    </div>
+    <div id="views">
+      <button class="btn on" data-view="eye" type="button">Eye level</button>
+      <button class="btn" data-view="over" type="button">Overview</button>
+      <button class="btn" data-view="up" type="button">Look up</button>
+      <button class="btn" data-view="side" type="button">Section</button>
+      <button class="btn" id="togglePanel" type="button">Controls</button>
+    </div>
+    <section id="plan" hidden>
+      <div class="sheetbar">
+        <button class="btn" id="copyCsv" type="button">Copy patch as CSV</button>
+        <span class="hint" id="copyMsg">Scroll sideways to follow the street. Addresses follow the patch settings in the panel.</span>
+      </div>
+      <div class="svgwrap" id="svgwrap"></div>
+      <div id="patch"></div>
+    </section>
+  </div>
+
+  <aside id="panel">
+    <div class="readout">
+      <div><b id="rLen">0</b><span>Street length m</span></div>
+      <div><b id="rFrames">0</b><span>Frames</span></div>
+      <div><b id="rFix">0</b><span>Fixtures</span></div>
+      <div><b id="rCh">0</b><span>DMX channels</span></div>
+      <div id="warn" hidden></div>
+    </div>
+
+    <fieldset>
+      <legend>Control source</legend>
+      <div class="row"><label for="source">Source<small>Auto uses Art-Net when it arrives</small></label>
+        <select id="source"><option value="auto">Auto</option><option value="effects">Built-in effects</option><option value="dmx">Art-Net / sACN</option></select></div>
+      <div id="srcStatus">Waiting for the local bridge.</div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Patch</legend>
+      <div class="row"><label for="universe">Universe<small>Art-Net numbering, 0 = first</small></label><input type="number" id="universe" min="0" max="32767" step="1" value="0"></div>
+      <div class="row"><label for="startAddr">Start address</label><input type="number" id="startAddr" min="1" max="509" step="1" value="1"></div>
+      <div class="row"><label for="firstLine">First line</label>
+        <select id="firstLine"><option value="R">Right line</option><option value="L">Left line</option></select></div>
+      <div class="row"><label for="countFrom">Count from</label>
+        <select id="countFrom"><option value="start">Frame 1 end</option><option value="end">Far end</option></select></div>
+      <p class="note">Mode: 4 ch per fixture, R G B W. Right and left are seen from frame 1 looking down the street.</p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Built-in effects</legend>
+      <div class="row"><label for="effect">Effect</label>
+        <select id="effect">
+          <option value="static">Static</option>
+          <option value="alternate">Alternate A/B</option>
+          <option value="chase">Chase along street</option>
+          <option value="rainbow">Rainbow flow</option>
+          <option value="breathe">Breathe</option>
+          <option value="swap">Left / right swap</option>
+          <option value="sparkle">Sparkle</option>
+          <option value="walk">Patch walk (address order)</option>
+        </select></div>
+      <div class="row"><label for="colA">Colour A</label><input type="color" id="colA" value="#1f6bff"></div>
+      <div class="row"><label for="colB">Colour B</label><input type="color" id="colB" value="#ff1e3c"></div>
+      <div class="row"><label for="speed">Speed</label><input type="range" id="speed" min="0" max="3" step="0.05" value="1"></div>
+      <div class="row"><label for="bright">Master</label><input type="range" id="bright" min="0" max="1" step="0.01" value="1"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Camera and atmosphere</legend>
+      <div class="row"><label for="expo">Exposure<small>like a camera, log scale</small></label><input type="range" id="expo" min="-3" max="0" step="0.01" value="-1.3"></div>
+      <div class="row"><label for="spill">Light on glass</label><input type="range" id="spill" min="0" max="1" step="0.01" value="0.35"></div>
+      <div class="row"><label for="haze">Haze (visible beam)</label><input type="range" id="haze" min="0" max="1" step="0.01" value="0.15"></div>
+      <div class="row"><label for="house">Ambient lighting<small>city light pollution</small></label><input type="range" id="house" min="0" max="1" step="0.01" value="0.2"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Fixtures: Beam F12 Multi Color</legend>
+      <div class="row"><label for="budget">Total fixtures</label><input type="number" id="budget" min="0" max="2000" step="1" value="102"></div>
+      <div class="row"><label for="litEvery">Light every N frames</label><input type="number" id="litEvery" min="1" max="10" step="1" value="2"></div>
+      <div class="row"><label for="litStart">First lit frame</label><input type="number" id="litStart" min="1" max="500" step="1" value="1"></div>
+      <div class="row"><label for="beamAng">Optic</label>
+        <select id="beamAng"><option value="15">15°</option><option value="25">25°</option><option value="45">45°</option><option value="60">60°</option></select></div>
+      <div class="row"><label for="tilt">Tilt toward beam °</label><input type="number" id="tilt" min="0" max="20" step="0.5" value="2"></div>
+      <div class="row"><label for="gap">Offset from beam mm<small>beam face to fixture axis</small></label><input type="number" id="gap" min="30" max="300" step="5" value="70"></div>
+      <button class="btn" id="fit" type="button">Fit frame count to fixtures</button>
+      <p class="note">Each lit frame gets 4 F12s at the bottom of the diagonals, one each side of each beam, aimed up along it. With 102 fixtures the last lit frame gets one F12 per beam.</p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Structure (estimates)</legend>
+      <div class="row"><label for="frames">Frames</label><input type="number" id="frames" min="2" max="400" step="1" value="51"></div>
+      <div class="row"><label for="spacing">Frame spacing m<small>1250 module on plan</small></label><input type="number" id="spacing" min="0.5" max="6" step="0.05" value="1.25"></div>
+      <div class="row"><label for="width">Width m<small>column to column</small></label><input type="number" id="width" min="2" max="30" step="0.1" value="7.0"></div>
+      <div class="row"><label for="eave">Column height m</label><input type="number" id="eave" min="1" max="15" step="0.1" value="3.5"></div>
+      <div class="row"><label for="ridge">Ridge height m</label><input type="number" id="ridge" min="1.5" max="25" step="0.1" value="5.7"></div>
+      <div class="row"><label for="colEvery">Column every N frames<small>3 = 3750 grid</small></label><input type="number" id="colEvery" min="1" max="20" step="1" value="3"></div>
+      <div class="row"><label for="rafD">Beam depth mm</label><input type="number" id="rafD" min="40" max="600" step="10" value="200"></div>
+      <div class="row"><label for="rafW">Beam width mm</label><input type="number" id="rafW" min="20" max="400" step="10" value="100"></div>
+      <div class="row"><label for="colS">Column size mm</label><input type="number" id="colS" min="40" max="600" step="10" value="160"></div>
+      <label class="note"><input type="checkbox" id="showGlass" checked> Glass roof (reference)</label>
+      <label class="note"><input type="checkbox" id="showEave"> Eave beam (not in brief)</label>
+      <label class="note"><input type="checkbox" id="showFloor" checked> Floor</label>
+      <button class="btn" id="reset" type="button">Reset all settings</button>
+    </fieldset>
+  </aside>
+</div>
+
+<script src="lib/three.min.js"></script>
+<script src="lib/OrbitControls.js"></script>
+<script>
+const F12_LDT={"15":{"R":{"peak":2477.3,"flux":147.0,"p":[1.0,0.9867,0.9433,0.8571,0.7448,0.61,0.4653,0.3462,0.2494,0.1807,0.1337,0.1015,0.0818,0.0672,0.0565,0.0481,0.0414,0.0353,0.0304,0.0258,0.022,0.0184,0.0153,0.0128,0.0105,0.0086,0.0069,0.0054,0.0043,0.0031,0.0023,0.0017,0.001,0.0005,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]},"G":{"peak":2569.9,"flux":227.0,"p":[1.0,1.0004,0.9945,0.9636,0.8987,0.798,0.6598,0.5275,0.3998,0.2984,0.2242,0.1669,0.1314,0.1054,0.0878,0.0751,0.0646,0.0563,0.0494,0.0429,0.0378,0.0328,0.0283,0.0246,0.0213,0.0183,0.0156,0.0133,0.0114,0.0098,0.0083,0.0071,0.006,0.005,0.0042,0.0033,0.0026,0.002,0.0015,0.0009,0.0005,0.0001,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]},"B":{"peak":798.3,"flux":76.5,"p":[1.0,0.9963,0.981,0.938,0.8647,0.7589,0.6271,0.5023,0.3864,0.2931,0.2248,0.1704,0.1361,0.111,0.0925,0.0796,0.0686,0.0599,0.0529,0.0462,0.0409,0.0358,0.0313,0.0279,0.0244,0.0215,0.0191,0.0169,0.0151,0.0136,0.0123,0.0112,0.0102,0.0094,0.0086,0.0079,0.0073,0.0067,0.0062,0.0057,0.0053,0.0049,0.0045,0.0042,0.0039,0.0036,0.0033,0.003,0.0027,0.0025,0.0023,0.002,0.0018,0.0016,0.0014,0.0012,0.001,0.0007,0.0005,0.0004,0.0002,0.0001,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]},"W":{"peak":3831.6,"flux":242.0,"p":[1.0,0.9847,0.9401,0.8524,0.7375,0.6019,0.4615,0.3446,0.2511,0.1841,0.1387,0.1065,0.0867,0.0717,0.0603,0.0524,0.0451,0.0392,0.0342,0.0296,0.0258,0.0221,0.019,0.0164,0.014,0.0119,0.0101,0.0085,0.0073,0.0061,0.0053,0.0045,0.0038,0.0032,0.0027,0.0022,0.0018,0.0013,0.001,0.0007,0.0004,0.0002,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]}},"25":{"R":{"peak":544.1,"flux":188.0,"p":[1.0,0.9938,0.9881,0.9763,0.9598,0.9365,0.9031,0.8651,0.8189,0.7678,0.7185,0.6638,0.6129,0.562,0.5126,0.4679,0.4213,0.3774,0.338,0.2967,0.2629,0.2313,0.203,0.18,0.1589,0.1407,0.1255,0.1118,0.1011,0.0911,0.0822,0.0749,0.0681,0.0621,0.0573,0.0521,0.0483,0.0444,0.0409,0.038,0.0351,0.0327,0.0304,0.0282,0.0262,0.0245,0.0227,0.0212,0.0196,0.0182,0.017,0.0156,0.0145,0.0135,0.0124,0.0114,0.0104,0.0095,0.0086,0.0077,0.007,0.0061,0.0054,0.0047,0.0039,0.0033,0.0026,0.002,0.0014,0.0008,0.0004,0.0002,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]},"G":{"peak":824.9,"flux":294.0,"p":[1.0,0.998,0.9928,0.9821,0.9668,0.9445,0.9122,0.8755,0.8299,0.7802,0.7284,0.6707,0.6184,0.5664,0.515,0.4677,0.4218,0.377,0.3384,0.2991,0.2664,0.2353,0.2074,0.184,0.1623,0.1442,0.1286,0.1148,0.1035,0.0935,0.0847,0.0774,0.0707,0.0648,0.0598,0.0549,0.051,0.0472,0.0438,0.0409,0.0379,0.0356,0.0333,0.0311,0.0291,0.0273,0.0255,0.0241,0.0225,0.0211,0.0198,0.0185,0.0173,0.0162,0.0151,0.0141,0.013,0.0122,0.0112,0.0104,0.0096,0.0087,0.008,0.0072,0.0064,0.0058,0.0051,0.0044,0.0038,0.0032,0.0026,0.002,0.0015,0.001,0.0006,0.0003,0.0001,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]},"B":{"peak":275.7,"flux":100.0,"p":[1.0,0.9992,0.9956,0.9878,0.9759,0.957,0.9276,0.8931,0.8493,0.8003,0.7474,0.6894,0.6357,0.5809,0.5276,0.4779,0.4301,0.3827,0.3422,0.3005,0.2666,0.2344,0.206,0.1822,0.1611,0.1429,0.1279,0.1143,0.1033,0.0936,0.0851,0.0779,0.0714,0.0656,0.0607,0.0559,0.052,0.0482,0.0448,0.042,0.0389,0.0366,0.0343,0.032,0.0299,0.0278,0.026,0.0244,0.0228,0.0213,0.0201,0.0187,0.0176,0.0165,0.0154,0.0145,0.0135,0.0127,0.0118,0.011,0.0102,0.0094,0.0086,0.0079,0.0071,0.0064,0.0057,0.0051,0.0045,0.0038,0.0032,0.0026,0.002,0.0015,0.001,0.0006,0.0003,0.0001,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]},"W":{"peak":829.3,"flux":298.0,"p":[1.0,0.9984,0.995,0.9873,0.9752,0.9558,0.9262,0.8915,0.8474,0.7983,0.7478,0.6902,0.6372,0.5825,0.5291,0.4807,0.4316,0.3848,0.3432,0.3011,0.2668,0.2352,0.2067,0.1836,0.1627,0.1448,0.13,0.1163,0.1055,0.0956,0.0867,0.0793,0.0725,0.0662,0.0612,0.0559,0.0517,0.0478,0.0443,0.0411,0.038,0.0354,0.0331,0.0309,0.0286,0.0265,0.0246,0.0228,0.0212,0.0198,0.0185,0.0171,0.016,0.0148,0.0139,0.0129,0.012,0.0111,0.0103,0.0095,0.0087,0.008,0.0071,0.0065,0.0057,0.0051,0.0045,0.0039,0.0032,0.0027,0.0021,0.0015,0.0009,0.0006,0.0003,0.0001,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]}},"45":{"R":{"peak":206.0,"flux":190.0,"p":[1.0,0.9991,0.9958,0.9904,0.9833,0.9737,0.9612,0.9471,0.9315,0.9138,0.8954,0.8743,0.8536,0.8319,0.808,0.7855,0.7608,0.7362,0.7122,0.6859,0.6601,0.6334,0.6071,0.5813,0.5549,0.5285,0.5018,0.4741,0.4489,0.4237,0.3986,0.3752,0.352,0.3293,0.3087,0.2873,0.2683,0.2496,0.2317,0.2155,0.1994,0.1853,0.1721,0.1583,0.1466,0.1348,0.1238,0.114,0.1047,0.0966,0.0889,0.0809,0.0744,0.0683,0.0628,0.0578,0.0528,0.0487,0.0448,0.0413,0.038,0.0348,0.0318,0.0291,0.0263,0.0237,0.0213,0.019,0.0172,0.0153,0.0136,0.012,0.0104,0.009,0.0077,0.0065,0.0055,0.0045,0.0035,0.0027,0.002,0.0015,0.0011,0.0007,0.0004,0.0001,0.0,0.0,0.0,0.0,0.0]},"G":{"peak":326.5,"flux":297.0,"p":[1.0,0.9985,0.9954,0.9899,0.9824,0.9722,0.9589,0.9453,0.9289,0.9112,0.8929,0.8703,0.8497,0.827,0.8037,0.7802,0.7558,0.73,0.7058,0.679,0.654,0.6284,0.6017,0.5764,0.5502,0.5245,0.499,0.4722,0.4481,0.423,0.3989,0.3758,0.3525,0.3302,0.3099,0.2879,0.2693,0.2502,0.2325,0.2168,0.2001,0.1856,0.1721,0.1584,0.1468,0.1344,0.1232,0.1133,0.1036,0.0955,0.0875,0.0796,0.0728,0.0665,0.061,0.056,0.0509,0.0467,0.0426,0.039,0.0358,0.0326,0.0295,0.0268,0.0238,0.0212,0.0187,0.0164,0.0145,0.0125,0.0107,0.0089,0.0073,0.0059,0.0045,0.0033,0.0022,0.0012,0.0005,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]},"B":{"peak":109.0,"flux":101.0,"p":[1.0,0.999,0.9959,0.9893,0.982,0.9721,0.9594,0.9459,0.9298,0.9121,0.8936,0.8726,0.852,0.8306,0.8072,0.785,0.7609,0.7364,0.7124,0.6864,0.6619,0.6366,0.6105,0.5856,0.5592,0.5329,0.5072,0.4806,0.4564,0.4315,0.4069,0.3836,0.3604,0.3374,0.3156,0.2923,0.2723,0.2526,0.2344,0.2176,0.2002,0.1856,0.1718,0.1582,0.1467,0.135,0.1244,0.1148,0.1056,0.0978,0.0903,0.0828,0.0765,0.0704,0.0647,0.0601,0.0548,0.0509,0.0467,0.0429,0.0396,0.0362,0.0332,0.0302,0.0273,0.0246,0.0219,0.0194,0.0172,0.0151,0.0131,0.0113,0.0095,0.008,0.0065,0.0053,0.0041,0.0031,0.002,0.001,0.0004,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]},"W":{"peak":335.7,"flux":301.0,"p":[1.0,0.9988,0.9959,0.9906,0.9837,0.9739,0.9609,0.9472,0.9314,0.9147,0.896,0.8745,0.8543,0.8316,0.8085,0.7851,0.7612,0.7353,0.711,0.6841,0.6592,0.6325,0.6062,0.5798,0.5534,0.5271,0.5005,0.4723,0.4478,0.4229,0.3979,0.3738,0.3505,0.3278,0.3054,0.2824,0.262,0.2415,0.2236,0.207,0.1896,0.1744,0.1611,0.1475,0.1359,0.1248,0.1145,0.1057,0.097,0.0895,0.0823,0.0755,0.0692,0.0636,0.0583,0.0536,0.0488,0.0448,0.041,0.0377,0.0345,0.0313,0.0283,0.0255,0.0228,0.0201,0.0175,0.0152,0.0132,0.0112,0.0092,0.0075,0.0059,0.0043,0.003,0.0017,0.0008,0.0004,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]}},"60":{"R":{"peak":159.4,"flux":186.0,"p":[1.0,0.9995,0.9989,0.9973,0.9951,0.9918,0.9875,0.983,0.9776,0.9713,0.9647,0.9569,0.9485,0.939,0.9283,0.9163,0.9019,0.8864,0.8694,0.8488,0.8289,0.8051,0.7807,0.7554,0.7276,0.6992,0.6703,0.6384,0.6085,0.5768,0.545,0.5146,0.4843,0.4534,0.4261,0.3968,0.3708,0.3452,0.3211,0.2987,0.276,0.2559,0.2372,0.2183,0.2013,0.1855,0.1703,0.1568,0.1428,0.131,0.1198,0.1087,0.0994,0.0908,0.0822,0.0756,0.0681,0.0622,0.0567,0.0516,0.0473,0.043,0.0392,0.0356,0.0324,0.0292,0.0264,0.0236,0.0211,0.0187,0.0163,0.0141,0.0118,0.0098,0.0077,0.0058,0.0043,0.0027,0.0015,0.0007,0.0001,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]},"G":{"peak":246.4,"flux":291.0,"p":[1.0,0.9997,0.9988,0.9968,0.9941,0.9907,0.9863,0.9813,0.9748,0.968,0.9602,0.9512,0.942,0.9318,0.9203,0.9078,0.8934,0.8773,0.8605,0.8404,0.8201,0.7975,0.774,0.7494,0.7231,0.6947,0.6666,0.6354,0.6067,0.5752,0.5439,0.5139,0.4837,0.4536,0.4265,0.3979,0.372,0.3474,0.3231,0.3013,0.2789,0.2593,0.241,0.2216,0.2058,0.1899,0.1749,0.1614,0.1475,0.136,0.1252,0.1141,0.1047,0.0957,0.0877,0.0802,0.0733,0.0673,0.0619,0.0567,0.0525,0.0481,0.0442,0.041,0.0372,0.0343,0.0312,0.0284,0.0258,0.0234,0.0209,0.0187,0.0162,0.0142,0.0122,0.0101,0.0081,0.0062,0.0046,0.0033,0.0021,0.0012,0.0006,0.0001,0.0,0.0,0.0,0.0,0.0,0.0,0.0]},"B":{"peak":82.3,"flux":99.0,"p":[1.0,0.9999,0.9989,0.9971,0.9945,0.9913,0.9872,0.9826,0.9765,0.9699,0.963,0.9543,0.9455,0.9358,0.9249,0.9131,0.8989,0.8833,0.8668,0.8471,0.8273,0.8053,0.7819,0.7573,0.7314,0.7033,0.6751,0.6443,0.6154,0.5844,0.5528,0.5232,0.4928,0.4624,0.4343,0.405,0.3788,0.3532,0.3289,0.306,0.2834,0.2633,0.2444,0.2253,0.2089,0.1929,0.1781,0.1649,0.1512,0.1396,0.1288,0.1177,0.1083,0.0993,0.0911,0.0842,0.0771,0.0712,0.0658,0.0606,0.0562,0.0518,0.0477,0.0442,0.0406,0.0374,0.0342,0.0314,0.0286,0.0261,0.0235,0.021,0.0184,0.0162,0.0141,0.0119,0.0098,0.0077,0.006,0.0045,0.0032,0.002,0.0012,0.0006,0.0002,0.0,0.0,0.0,0.0,0.0,0.0]},"W":{"peak":252.1,"flux":295.0,"p":[1.0,0.9998,0.9986,0.9969,0.9944,0.9914,0.9875,0.983,0.9771,0.9711,0.9641,0.9559,0.9475,0.9379,0.927,0.9149,0.9,0.8834,0.8662,0.8453,0.8247,0.8016,0.7767,0.7516,0.724,0.6961,0.6678,0.6363,0.6066,0.5755,0.5441,0.5141,0.4838,0.4531,0.4248,0.3952,0.3691,0.3432,0.3185,0.2959,0.2725,0.2527,0.2335,0.2148,0.1987,0.1831,0.1683,0.1548,0.1417,0.1305,0.1198,0.109,0.0999,0.0912,0.0834,0.0764,0.07,0.0643,0.0591,0.0543,0.0498,0.0461,0.0423,0.0389,0.0355,0.0326,0.0298,0.027,0.0246,0.0221,0.0198,0.0176,0.0152,0.0131,0.0111,0.0091,0.0072,0.0052,0.0037,0.0026,0.0015,0.0008,0.0002,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]}}};
+(function(){
+const $=id=>document.getElementById(id);
+const DEFAULTS={frames:51,spacing:1.25,width:7.0,eave:3.5,ridge:5.7,colEvery:3,rafD:200,rafW:100,colS:160,
+  budget:102,litEvery:2,litStart:1,beamAng:'25',tilt:2,gap:70,
+  source:'auto',universe:0,startAddr:1,firstLine:'R',countFrom:'start',
+  effect:'static',colA:'#1f6bff',colB:'#ff1e3c',speed:1,bright:1,expo:-1.3,spill:0.35,haze:0.15,house:0.2,
+  showGlass:true,showEave:false,showFloor:true};
+const NUM=['frames','spacing','width','eave','ridge','colEvery','rafD','rafW','colS','budget','litEvery','litStart','tilt','gap','universe','startAddr','speed','bright','expo','spill','haze','house'];
+const BOOL=['showGlass','showEave','showFloor'];
+const STR=['effect','colA','colB','beamAng','source','firstLine','countFrom'];
+const STRUCT=new Set(['frames','spacing','width','eave','ridge','colEvery','rafD','rafW','colS','budget','litEvery','litStart','beamAng','tilt','gap','showGlass','showEave','showFloor']);
+const PATCH=new Set(['universe','startAddr','firstLine','countFrom']);
+const KEY='amstel1-alf';
+let P=Object.assign({},DEFAULTS);
+try{const s=JSON.parse(localStorage.getItem(KEY)||'null'); if(s) for(const k in DEFAULTS) if(k in s) P[k]=s[k];}catch(e){}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(P));}catch(e){}}
+function toUI(){NUM.concat(STR).forEach(k=>$(k).value=P[k]);BOOL.forEach(k=>$(k).checked=!!P[k]);}
+toUI();
+
+/* ---------- renderer and atmosphere ---------- */
+const stage=$('stage');
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+stage.appendChild(renderer.domElement);
+const scene=new THREE.Scene();
+const NIGHT=new THREE.Color(0x07090d), SMOG=new THREE.Color(0x2b2622), skyCol=new THREE.Color();
+scene.fog=new THREE.Fog(0x07090d,40,160);
+const camera=new THREE.PerspectiveCamera(55,1,0.05,600);
+const controls=new THREE.OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true;controls.dampingFactor=0.08;
+// ambient light pollution: orange-grey city glow from the sky through the glass, weak bounce from the floor
+const hemi=new THREE.HemisphereLight(0xd9b48c,0x15110e,0.3);scene.add(hemi);
+const amb=new THREE.AmbientLight(0x8d8f96,0.05);scene.add(amb);
+function updateAmbient(){
+  const a=P.house;
+  hemi.intensity=0.02+a*1.1; amb.intensity=0.01+a*0.12;
+  skyCol.copy(NIGHT).lerp(SMOG,a); renderer.setClearColor(skyCol,1); scene.fog.color.copy(skyCol);
+  glassMat.opacity=0.05+a*0.12;
+}
+
+function canvasTex(w,h,draw){const c=document.createElement('canvas');c.width=w;c.height=h;draw(c.getContext('2d'),w,h);const t=new THREE.CanvasTexture(c);t.needsUpdate=true;return t;}
+const floorTex=canvasTex(256,256,(g,w,h)=>{g.fillStyle='#1b1714';g.fillRect(0,0,w,h);g.strokeStyle='#120f0d';g.lineWidth=2;const bh=16,bw=48;for(let y=0;y<h;y+=bh){g.beginPath();g.moveTo(0,y);g.lineTo(w,y);g.stroke();const off=(y/bh)%2?bw/2:0;for(let x=off;x<w;x+=bw){g.beginPath();g.moveTo(x,y);g.lineTo(x,y+bh);g.stroke();}}});
+floorTex.wrapS=floorTex.wrapT=THREE.RepeatWrapping;
+const steel=new THREE.MeshStandardMaterial({color:0xe9e9e4,roughness:0.55,metalness:0.05});
+const fixBody=new THREE.MeshStandardMaterial({color:0x8a8e92,roughness:0.45,metalness:0.4});
+const glassMat=new THREE.MeshStandardMaterial({color:0x9fb0c0,transparent:true,opacity:0.07,roughness:0.1,metalness:0.2,side:THREE.DoubleSide,depthWrite:false});
+const mullionMat=new THREE.LineBasicMaterial({color:0x1d2430});
+const floorMat=new THREE.MeshStandardMaterial({map:floorTex,roughness:0.9});
+
+/* ---------- photometry ----------
+   Intensity per emitter (R G B W) from the F12 LDT files, averaged over the C planes.
+   Illuminance E = I(theta) * cos(incidence) / r^2 in lux per emitter.
+   Each emitter is shown with a unit-luminance linear RGB colour, then a camera curve. */
+const CHROMA={R:[4.30,0.10,0],G:[0.06,1.33,0.20],B:[0.10,0.20,11.5],W:[1.82,0.83,0.27]};
+let profTex=null, peak=new THREE.Vector4(), halfAngle=0.25;
+function loadOptic(opt){
+  const d=F12_LDT[opt]||F12_LDT['25']; const data=new Uint8Array(91*4);
+  for(let g=0;g<91;g++){['R','G','B','W'].forEach((c,j)=>data[g*4+j]=Math.round(Math.min(1,d[c].p[g])*255));}
+  if(profTex) profTex.dispose();
+  profTex=new THREE.DataTexture(data,91,1,THREE.RGBAFormat); profTex.magFilter=profTex.minFilter=THREE.LinearFilter; profTex.needsUpdate=true;
+  peak.set(d.R.peak,d.G.peak,d.B.peak,d.W.peak);
+  const hw=d.W.p.findIndex(v=>v<0.5); halfAngle=(hw>0?hw:12)*Math.PI/180;
+}
+const washVS=`attribute vec3 fn;attribute float kind;varying vec3 vP;varying vec3 vN;varying float vK;
+void main(){vP=position;vN=fn;vK=kind;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`;
+const washFS=`uniform vec3 uPos[2];uniform vec3 uDir[2];uniform vec4 uD[2];uniform vec4 uPeak;uniform sampler2D uProf;
+uniform vec3 uCR;uniform vec3 uCG;uniform vec3 uCB;uniform vec3 uCW;uniform float uK;uniform float uGlass;uniform float uBw;
+varying vec3 vP;varying vec3 vN;varying float vK;
+void main(){vec3 c=vec3(0.0);
+ for(int i=0;i<2;i++){
+  vec3 v=vP-uPos[i];float r=max(length(v),0.05);vec3 l=v/r;float ca=dot(l,uDir[i]);if(ca<=0.0)continue;
+  float th=degrees(acos(clamp(ca,-1.0,1.0)));if(th>89.0)continue;
+  vec4 prof=texture2D(uProf,vec2((th+0.5)/91.0,0.5));
+  float geo=max(dot(-l,vN),0.0)/(r*r);
+  if(vK>0.5){ if(abs(vP.z)>uBw*0.5 && vP.z*uPos[i].z<0.0) geo=0.0; geo*=uGlass; }
+  vec4 E=uD[i]*uPeak*prof*geo;
+  c+=E.r*uCR+E.g*uCG+E.b*uCB+E.a*uCW;}
+ float m=max(max(c.r,c.g),max(c.b,1e-6));
+ c*=(1.0-exp(-uK*m))/m;
+ gl_FragColor=vec4(pow(c,vec3(0.4545)),1.0);}`;
+const hazeVS=`varying float vT;varying float vEdge;void main(){vT=1.0-uv.y;vec4 mv=modelViewMatrix*vec4(position,1.0);vec3 n=normalize(normalMatrix*normal);vEdge=abs(dot(n,normalize(-mv.xyz)));gl_Position=projectionMatrix*mv;}`;
+const hazeFS=`uniform vec3 uCol;uniform float uHaze;varying float vT;varying float vEdge;void main(){float a=uHaze*pow(1.0-vT,2.2)*pow(vEdge,1.5)*smoothstep(0.0,0.04,vT);gl_FragColor=vec4(uCol*a,1.0);}`;
+
+/* ---------- build ---------- */
+let world=null, fixtures=[], patch=[], washMats=[], hazeMats=[];
+function build(){
+  if(world){scene.remove(world);world.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material&&o.material.userData&&o.material.userData.own)o.material.dispose();});}
+  world=new THREE.Group();scene.add(world);fixtures=[];washMats=[];hazeMats=[];
+  loadOptic(String(P.beamAng));
+  const N=Math.max(2,Math.round(P.frames)), S=P.spacing, W=P.width, E=P.eave, R=Math.max(P.ridge,P.eave+0.2);
+  const half=W/2, rise=R-E, L=Math.hypot(half,rise), ang=Math.atan2(rise,half);
+  const d=P.rafD/1000, b=P.rafW/1000, cs=P.colS/1000, len=(N-1)*S;
+  const tilt=(P.tilt||0)*Math.PI/180, gap=Math.max(0.03,P.gap/1000);
+  const rafGeo=new THREE.BoxGeometry(L,d,b), colGeo=new THREE.BoxGeometry(cs,E,cs);
+
+  let budget=Math.max(0,Math.round(P.budget)); const every=Math.max(1,Math.round(P.litEvery)), start=Math.max(1,Math.round(P.litStart))-1;
+  const litMap=new Map();
+  for(let i=start;i<N&&budget>0;i+=every){const slots=[];for(const face of [1,-1])for(const side of [0,1]){if(budget>0){slots.push({side,face});budget--;}}litMap.set(i,slots);}
+
+  // F12 head (dimension sheet: 123 wide, 155.5 high incl. bracket), simplified
+  const headGeo=new THREE.BoxGeometry(0.11,0.115,0.115);
+  const yokeGeo=new THREE.BoxGeometry(0.03,0.05,0.123);
+  const lensGeo=new THREE.CircleGeometry(0.045,24); lensGeo.rotateY(Math.PI/2);
+  const hazeLen=L*1.15, hazeGeo=new THREE.ConeGeometry(Math.tan(halfAngle*1.3)*hazeLen,hazeLen,32,1,true);
+  hazeGeo.translate(0,-hazeLen/2,0); hazeGeo.rotateZ(Math.PI/2);
+  const x0=-L/2,x1=L/2, gy=d/2+0.03, gz=S*0.98;
+  const quads=[
+    {p:[[x0,-d/2,b/2+0.002],[x1,-d/2,b/2+0.002],[x1,d/2,b/2+0.002],[x0,d/2,b/2+0.002]],n:[0,0,1],k:0},
+    {p:[[x0,-d/2,-b/2-0.002],[x1,-d/2,-b/2-0.002],[x1,d/2,-b/2-0.002],[x0,d/2,-b/2-0.002]],n:[0,0,-1],k:0},
+    {p:[[x0,-d/2-0.002,-b/2],[x1,-d/2-0.002,-b/2],[x1,-d/2-0.002,b/2],[x0,-d/2-0.002,b/2]],n:[0,-1,0],k:0},
+    {p:[[x0,gy,-gz],[x1,gy,-gz],[x1,gy,gz],[x0,gy,gz]],n:[0,-1,0],k:1}];
+  const pos=[],fnA=[],kA=[],idx=[];
+  quads.forEach((q,qi)=>{q.p.forEach(v=>{pos.push(...v);fnA.push(...q.n);kA.push(q.k);});const o=qi*4;idx.push(o,o+1,o+2,o,o+2,o+3);});
+  const washGeo=new THREE.BufferGeometry();
+  washGeo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  washGeo.setAttribute('fn',new THREE.Float32BufferAttribute(fnA,3));
+  washGeo.setAttribute('kind',new THREE.Float32BufferAttribute(kA,1));
+  washGeo.setIndex(idx);
+  const v3=a=>new THREE.Vector3(a[0],a[1],a[2]);
+
+  let litIndex=0;
+  for(let i=0;i<N;i++){
+    const z=i*S, frame=new THREE.Group(); frame.position.z=z; world.add(frame);
+    const slots=litMap.get(i);
+    for(const side of [0,1]){
+      const sg=new THREE.Group(); if(side===1) sg.scale.x=-1; frame.add(sg);
+      const rg=new THREE.Group(); rg.position.set(-half/2,E+rise/2,0); rg.rotation.z=ang; sg.add(rg);
+      rg.add(new THREE.Mesh(rafGeo,steel));
+      if(i%Math.max(1,Math.round(P.colEvery))===0||i===N-1){const c=new THREE.Mesh(colGeo,steel);c.position.set(-half,E/2,0);sg.add(c);}
+      if(!slots) continue;
+      const mine=slots.filter(s=>s.side===side); if(!mine.length) continue;
+      const wm=new THREE.ShaderMaterial({vertexShader:washVS,fragmentShader:washFS,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide,
+        uniforms:{uPos:{value:[new THREE.Vector3(),new THREE.Vector3()]},uDir:{value:[new THREE.Vector3(1,0,0),new THREE.Vector3(1,0,0)]},uD:{value:[new THREE.Vector4(),new THREE.Vector4()]},
+          uPeak:{value:peak},uProf:{value:profTex},uCR:{value:v3(CHROMA.R)},uCG:{value:v3(CHROMA.G)},uCB:{value:v3(CHROMA.B)},uCW:{value:v3(CHROMA.W)},
+          uK:{value:Math.pow(10,P.expo)},uGlass:{value:P.spill},uBw:{value:b}}});
+      wm.userData.own=true; washMats.push(wm); rg.add(new THREE.Mesh(washGeo,wm));
+      mine.forEach((s,si)=>{
+        const fz=s.face*(b/2+gap), fx=x0+0.07;
+        const fixture=new THREE.Group(); fixture.position.set(fx,0,fz); fixture.rotation.y=-s.face*tilt; rg.add(fixture);
+        fixture.add(new THREE.Mesh(headGeo,fixBody));
+        const yoke=new THREE.Mesh(yokeGeo,fixBody); yoke.position.set(0,-0.08,0); fixture.add(yoke);
+        const lensM=new THREE.MeshBasicMaterial({color:0x000000}); lensM.userData.own=true;
+        const lens=new THREE.Mesh(lensGeo,lensM); lens.position.x=0.0555; fixture.add(lens);
+        const hm=new THREE.ShaderMaterial({vertexShader:hazeVS,fragmentShader:hazeFS,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide,
+          uniforms:{uCol:{value:new THREE.Vector3()},uHaze:{value:P.haze}}});
+        hm.userData.own=true; hazeMats.push(hm);
+        const cone=new THREE.Mesh(hazeGeo,hm); cone.position.x=0.056; fixture.add(cone);
+        const dir=new THREE.Vector3(Math.cos(tilt),0,-s.face*Math.sin(tilt));
+        wm.uniforms.uPos.value[si].set(fx+0.056,0,fz); wm.uniforms.uDir.value[si].copy(dir);
+        // street-direction offset of this fixture: face +1 lies after the beam (toward higher frames)
+        fixtures.push({frame:i,litIndex,side,face:s.face,z:z+fz,lensM,drive:wm.uniforms.uD.value[si],haze:hm,spark:0,rgbw:[0,0,0,0]});
+      });
+    }
+    if(slots) litIndex++;
+  }
+
+  if(P.showGlass){
+    const gGeo=new THREE.PlaneGeometry(L+0.2,len+S);
+    for(const side of [0,1]){
+      const sg=new THREE.Group(); if(side===1) sg.scale.x=-1; world.add(sg);
+      const holder=new THREE.Group(); holder.position.set(-half/2,E+rise/2,len/2); holder.rotation.z=ang; sg.add(holder);
+      const g=new THREE.Mesh(gGeo,glassMat); g.position.set(0,d/2+0.03,0); g.rotation.set(Math.PI/2,0,0); holder.add(g);
+      const pts=[], n=Math.max(2,Math.round(L/1.1));
+      for(let j=0;j<=n;j++){const x=-L/2+j*L/n;pts.push(new THREE.Vector3(x,d/2+0.035,-len/2-S/2),new THREE.Vector3(x,d/2+0.035,len/2+S/2));}
+      holder.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts),mullionMat));
+    }
+  }
+  if(P.showEave){const eg=new THREE.BoxGeometry(cs,0.22,len+cs);for(const s of [-1,1]){const e=new THREE.Mesh(eg,steel);e.position.set(s*half,E-0.11,len/2);world.add(e);}}
+  if(P.showFloor){const fw=W+8, fg=new THREE.PlaneGeometry(fw,len+20); floorTex.repeat.set(fw/3,(len+20)/3);
+    const f=new THREE.Mesh(fg,floorMat); f.rotation.x=-Math.PI/2; f.position.set(0,0,len/2); world.add(f);}
+
+  world.userData={N,S,W,E,R,len,L,b,gap,litFrames:[...litMap.keys()]};
+  $('rLen').textContent=len.toFixed(1); $('rFrames').textContent=N;
+  const msgs=[];
+  if(Math.round(P.budget)>fixtures.length) msgs.push(`Only ${fixtures.length} of ${Math.round(P.budget)} fixtures fit. Add frames or use "Fit frame count".`);
+  if(P.ridge<=P.eave) msgs.push('Ridge must be higher than the columns.');
+  $('warn').hidden=!msgs.length; $('warn').textContent=msgs.join(' ');
+  doPatch();
+  updateAmbient();
+}
+
+/* ---------- patch ----------
+   Right side = side 0 (x < 0), seen from frame 1 looking toward higher frames. */
+function doPatch(){
+  const first=P.firstLine==='L'?1:0, dirSign=P.countFrom==='end'?-1:1;
+  patch=fixtures.slice().sort((a,b)=>{
+    const la=a.side===first?0:1, lb=b.side===first?0:1; if(la!==lb) return la-lb;
+    return dirSign*(a.z-b.z);
+  });
+  let uni=Math.max(0,Math.round(P.universe)), addr=Math.max(1,Math.round(P.startAddr));
+  patch.forEach((f,i)=>{
+    if(addr+3>512){uni++;addr=1;}
+    f.id=i+1; f.uni=uni; f.addr=addr; f.line=f.side===0?'R':'L'; addr+=4;
+  });
+  $('rFix').textContent=fixtures.length; $('rCh').textContent=fixtures.length*4;
+  drawPlan();
+}
+
+function updateLive(){const k=Math.pow(10,P.expo);washMats.forEach(m=>{m.uniforms.uK.value=k;m.uniforms.uGlass.value=P.spill;});hazeMats.forEach(m=>m.uniforms.uHaze.value=P.haze);}
+
+/* ---------- Art-Net / sACN via the local bridge ---------- */
+const dmx=new Map(); let lastRx=0, rxCount=0, rxRate=0, ws=null, bridgeInfo=null;
+function connect(){
+  if(location.protocol!=='http:'){ setStatus(); return; }
+  try{ ws=new WebSocket(`ws://${location.host}/ws`); }catch(e){ setTimeout(connect,2000); return; }
+  ws.binaryType='arraybuffer';
+  ws.onmessage=ev=>{
+    if(typeof ev.data==='string'){try{bridgeInfo=JSON.parse(ev.data);}catch(e){} setStatus(); return;}
+    const u8=new Uint8Array(ev.data); if(u8.length<3) return;
+    const uni=(u8[0]<<8)|u8[1]; let buf=dmx.get(uni); if(!buf){buf=new Uint8Array(512);dmx.set(uni,buf);}
+    buf.set(u8.subarray(2,2+Math.min(512,u8.length-2)));
+    lastRx=performance.now(); rxCount++;
+  };
+  ws.onopen=()=>setStatus(); ws.onclose=()=>{ws=null;bridgeInfo=null;setStatus();setTimeout(connect,2000);};
+}
+setInterval(()=>{rxRate=rxCount;rxCount=0;setStatus();},1000);
+function dmxLive(){return performance.now()-lastRx<2000;}
+function useDmx(){return P.source==='dmx'||(P.source==='auto'&&dmxLive());}
+function setStatus(){
+  const pill=$('netPill'), t=$('netText'), st=$('srcStatus');
+  pill.classList.remove('live','wait');
+  if(location.protocol!=='http:'){
+    t.textContent='Built-in effects'; st.textContent='Art-Net input works in the local app: run amstel1_alf_bridge.py and open http://localhost:8080.'; return;
+  }
+  if(!ws||ws.readyState!==1){t.textContent='Bridge offline';pill.classList.add('wait');st.textContent='Cannot reach the bridge. Is amstel1_alf_bridge.py running?';return;}
+  const unis=[...dmx.keys()].sort((a,b)=>a-b);
+  if(dmxLive()){pill.classList.add('live');t.textContent=`DMX live · ${rxRate} pkt/s`;}
+  else{pill.classList.add('wait');t.textContent='Bridge ready · no DMX';}
+  const lis=bridgeInfo?bridgeInfo.listen.join(', '):'';
+  st.innerHTML=`Listening: ${lis||'?'}<br>Universes seen: ${unis.length?unis.slice(0,8).join(', '):'none yet'}<br>Patched on universe ${Math.round(P.universe)}${patch.length&&patch[patch.length-1].uni!==Math.round(P.universe)?' to '+patch[patch.length-1].uni:''}`;
+}
+
+/* ---------- drive: effects or DMX ---------- */
+const cA=new THREE.Color(), cB=new THREE.Color(), tmp=new THREE.Color();
+function toRGBW(c,I,out){const w=Math.min(c.r,c.g,c.b);out[0]=(c.r-w)*I;out[1]=(c.g-w)*I;out[2]=(c.b-w)*I;out[3]=w*I;}
+function effect(f,t){
+  const sp=P.speed, len=Math.max(1,world.userData.len); let I=1; tmp.copy(cA);
+  switch(P.effect){
+    case 'alternate': tmp.copy(f.litIndex%2?cB:cA); break;
+    case 'chase': {const w=0.5+0.5*Math.sin(2*Math.PI*(f.z/12-t*sp*0.5)); tmp.copy(cB).lerp(cA,w); I=0.1+0.9*w*w; break;}
+    case 'rainbow': tmp.setHSL(((f.z/len)+t*sp*0.08)%1,1,0.5); break;
+    case 'breathe': I=0.15+0.85*(0.5+0.5*Math.sin(t*sp*1.6)); break;
+    case 'swap': {const w=0.5+0.5*Math.sin(t*sp*1.8+(f.side?Math.PI:0)); tmp.copy(cB).lerp(cA,w); I=0.15+0.85*w; break;}
+    case 'sparkle': {if(Math.random()<0.004*(0.3+sp)) f.spark=1; f.spark*=Math.pow(0.9,1+sp); tmp.copy(cA).lerp(cB,f.spark); I=0.25+0.75*f.spark; break;}
+    case 'walk': {const cur=Math.floor(t*sp*4)%Math.max(1,patch.length); I=(f.id-1===cur)?1:0; break;}
+  }
+  toRGBW(tmp,I*P.bright,f.rgbw);
+}
+function fromDmx(f){
+  const buf=dmx.get(f.uni); const o=f.rgbw;
+  if(!buf){o[0]=o[1]=o[2]=o[3]=0;return;}
+  const a=f.addr-1; o[0]=buf[a]/255; o[1]=buf[a+1]/255; o[2]=buf[a+2]/255; o[3]=buf[a+3]/255;
+}
+function apply(f){
+  const o=f.rgbw; f.drive.set(o[0],o[1],o[2],o[3]);
+  // visible colour of the source (lens and haze), relative to full white
+  const r=o[0]*peak.x*CHROMA.R[0]+o[1]*peak.y*CHROMA.G[0]+o[2]*peak.z*CHROMA.B[0]+o[3]*peak.w*CHROMA.W[0];
+  const g=o[0]*peak.x*CHROMA.R[1]+o[1]*peak.y*CHROMA.G[1]+o[2]*peak.z*CHROMA.B[1]+o[3]*peak.w*CHROMA.W[1];
+  const b=o[0]*peak.x*CHROMA.R[2]+o[1]*peak.y*CHROMA.G[2]+o[2]*peak.z*CHROMA.B[2]+o[3]*peak.w*CHROMA.W[2];
+  const ref=peak.w*CHROMA.W[0]+1e-6, m=Math.max(r,g,b,1e-6), s=Math.min(1,m/ref*1.6)/m;
+  f.lensM.color.setRGB(Math.min(1,r*s+0.03),Math.min(1,g*s+0.03),Math.min(1,b*s+0.03));
+  f.haze.uniforms.uCol.value.set(r/ref,g/ref,b/ref);
+}
+
+/* ---------- DMX plan (SVG) ---------- */
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function pad3(n){return String(n).padStart(3,'0');}
+function drawPlan(){
+  const u=world.userData; if(!u) return;
+  const sx=44, mL=240, mR=320, W=u.W*sx, len=u.len*sx;
+  const yTopBand=40, yL=yTopBand+120, yR=yL+W, yMid=(yL+yR)/2, H=yR+250;
+  const totalW=mL+len+mR, X=z=>mL+z*sx;
+  const litPitch=Math.max(1,Math.round(P.litEvery))*u.S*sx;
+  const stack=litPitch<104;
+  const colorOf=s=>s===0?'var(--lineR)':'var(--lineL)';
+  let g=[];
+  g.push(`<rect x="0" y="0" width="${totalW}" height="${H}" fill="#ffffff"/>`);
+  // street outline and ridge
+  g.push(`<rect x="${X(0)-12}" y="${yL}" width="${len+24}" height="${W}" fill="#faf9f6" stroke="#d6d3cc"/>`);
+  g.push(`<line x1="${X(0)-24}" y1="${yMid}" x2="${X(u.len)+24}" y2="${yMid}" stroke="#8a8780" stroke-width="1" stroke-dasharray="14 4 2 4"/>`);
+  g.push(`<text x="${X(u.len)+30}" y="${yMid+4}" font-size="11" fill="#6b6f76" font-family="IBM Plex Sans Condensed,Arial Narrow,sans-serif">RIDGE</text>`);
+  // frames, beams and columns
+  for(let i=0;i<u.N;i++){
+    const x=X(i*u.S), lit=u.litFrames.includes(i);
+    g.push(`<line x1="${x}" y1="${yL}" x2="${x}" y2="${yR}" stroke="${lit?'#3a3d43':'#c4c1b9'}" stroke-width="${lit?1.6:1}"/>`);
+    if(i%Math.max(1,Math.round(P.colEvery))===0||i===u.N-1){
+      const c=Math.max(6,P.colS/1000*sx);
+      g.push(`<rect x="${x-c/2}" y="${yL-c/2}" width="${c}" height="${c}" fill="#3a3d43"/><rect x="${x-c/2}" y="${yR-c/2}" width="${c}" height="${c}" fill="#3a3d43"/>`);
+    }
+    if(lit) g.push(`<text x="${x}" y="${yMid-6}" font-size="10" text-anchor="middle" fill="#6b6f76" font-family="IBM Plex Mono,monospace">F${i+1}</text>`);
+  }
+  // data chain per line
+  for(const side of [0,1]){
+    const fs=patch.filter(f=>f.side===side); if(!fs.length) continue;
+    const pts=fs.map(f=>`${X(f.z)},${side===0?yR-10:yL+10}`).join(' ');
+    g.push(`<polyline points="${pts}" fill="none" stroke="${colorOf(side)}" stroke-width="1.2" stroke-dasharray="5 3" opacity=".7"/>`);
+    const f0=fs[0], yy=side===0?yR-10:yL+10, xin=X(f0.z)+(P.countFrom==='end'?40:-40);
+    g.push(`<line x1="${xin}" y1="${yy}" x2="${X(f0.z)}" y2="${yy}" stroke="${colorOf(side)}" stroke-width="2" marker-end="url(#arr${side})"/>`);
+    g.push(`<text x="${xin+(P.countFrom==='end'?6:-6)}" y="${yy+4}" font-size="11" font-weight="600" text-anchor="${P.countFrom==='end'?'start':'end'}" fill="${colorOf(side)}" font-family="IBM Plex Sans Condensed,Arial Narrow,sans-serif">DMX IN · ${side===0?'RIGHT':'LEFT'} LINE</text>`);
+  }
+  // fixtures and labels
+  const byFrameSide={};
+  patch.forEach(f=>{const k=f.frame+'_'+f.side;(byFrameSide[k]=byFrameSide[k]||[]).push(f);});
+  Object.values(byFrameSide).forEach(list=>{
+    list.sort((a,b)=>a.z-b.z);
+    list.forEach((f,j)=>{
+      const right=f.side===0, fy=right?yR-10:yL+10, fx=X(u.S*f.frame)+f.face*Math.max(7,(u.b/2+u.gap)*sx);
+      const col=colorOf(f.side);
+      // symbol: body with aim triangle toward the ridge
+      const aim=right?-1:1;
+      g.push(`<rect x="${fx-5}" y="${fy-5}" width="10" height="10" fill="#fff" stroke="${col}" stroke-width="1.6"/>`);
+      g.push(`<path d="M${fx-4},${fy+aim*6} L${fx+4},${fy+aim*6} L${fx},${fy+aim*14} Z" fill="${col}"/>`);
+      // label box
+      const lw=46, lh=32; let lx, ly;
+      if(stack){lx=X(u.S*f.frame)-lw/2; ly=right?(yR+16+j*(lh+6)):(yL-16-lh-j*(lh+6));}
+      else{lx=X(u.S*f.frame)+(f.face<0?-lw-3:3); ly=right?yR+16:yL-16-lh;}
+      g.push(`<line x1="${fx}" y1="${right?fy+5:fy-5}" x2="${lx+lw/2}" y2="${right?ly:ly+lh}" stroke="${col}" stroke-width=".8"/>`);
+      g.push(`<rect x="${lx}" y="${ly}" width="${lw}" height="${lh}" rx="2" fill="#fff" stroke="${col}" stroke-width="1.2"/>`);
+      g.push(`<text x="${lx+lw/2}" y="${ly+15}" font-size="14" font-weight="500" text-anchor="middle" fill="#16181c" font-family="IBM Plex Mono,monospace">${f.uni===Math.round(P.universe)?pad3(f.addr):f.uni+'.'+pad3(f.addr)}</text>`);
+      g.push(`<text x="${lx+lw/2}" y="${ly+27}" font-size="9.5" text-anchor="middle" fill="${col}" font-family="IBM Plex Mono,monospace">#${f.id}</text>`);
+    });
+  });
+  // orientation and scale
+  g.push(`<text x="${X(0)}" y="${yR+90}" font-size="12" font-weight="600" fill="#16181c" font-family="IBM Plex Sans Condensed,Arial Narrow,sans-serif">FRAME 1 END</text>`);
+  g.push(`<text x="${X(u.len)}" y="${yR+90}" font-size="12" font-weight="600" text-anchor="end" fill="#16181c" font-family="IBM Plex Sans Condensed,Arial Narrow,sans-serif">FAR END · FRAME ${u.N}</text>`);
+  g.push(`<line x1="${X(0)+110}" y1="${yR+86}" x2="${X(0)+190}" y2="${yR+86}" stroke="#16181c" stroke-width="1.2" marker-end="url(#arrK)"/>`);
+  const sb=X(0), sy=yR+120;
+  for(let m=0;m<10;m+=5){g.push(`<rect x="${sb+m*sx}" y="${sy}" width="${5*sx}" height="6" fill="${m%10?'#fff':'#16181c'}" stroke="#16181c"/>`);}
+  g.push(`<text x="${sb}" y="${sy+20}" font-size="10" fill="#16181c" font-family="IBM Plex Mono,monospace">0</text><text x="${sb+5*sx}" y="${sy+20}" font-size="10" text-anchor="middle" fill="#16181c" font-family="IBM Plex Mono,monospace">5</text><text x="${sb+10*sx}" y="${sy+20}" font-size="10" text-anchor="middle" fill="#16181c" font-family="IBM Plex Mono,monospace">10 m</text>`);
+  // title block
+  const tbx=X(u.len)+60, tby=yTopBand, tbw=240, F='font-family="IBM Plex Sans Condensed,Arial Narrow,sans-serif"', M='font-family="IBM Plex Mono,monospace"';
+  const rs=patch.filter(f=>f.side===0), ls=patch.filter(f=>f.side===1);
+  const rng=a=>a.length?`${pad3(Math.min(...a.map(f=>f.addr)))}-${pad3(Math.max(...a.map(f=>f.addr+3)))}`:'none';
+  const ids=a=>a.length?`#${Math.min(...a.map(f=>f.id))}-#${Math.max(...a.map(f=>f.id))}`:'';
+  const lines=[
+    ['AMSTEL 1 ALF',16,600,F],['DMX plan · plan view',12,400,F],['',6],
+    ['Fixture',10,600,F],['Beam F12 Multi Color RGBW',12,400,F],['Optic '+P.beamAng+'°',11,400,F],['',6],
+    ['Mode',10,600,F],['4 ch: 1 R · 2 G · 3 B · 4 W',12,400,M],['',6],
+    ['Universe (Art-Net)',10,600,F],[String(Math.round(P.universe))+(patch.length&&patch[patch.length-1].uni!==Math.round(P.universe)?' to '+patch[patch.length-1].uni:''),12,400,M],['',6],
+    ['Totals',10,600,F],[`${patch.length} fixtures · ${patch.length*4} ch`,12,400,M],['',6],
+    ['Right line',10,600,F],[`${ids(rs)}  ch ${rng(rs)}`,12,400,M],
+    ['Left line',10,600,F],[`${ids(ls)}  ch ${rng(ls)}`,12,400,M],['',6],
+    ['Data limits (F12 docs)',10,600,F],['max 64 per DMX/RDM run @45 fps',11,400,F],['max 32 per power cable',11,400,F],['',6],
+    ['Dimensions estimated, not surveyed',10,400,F]
+  ];
+  let ty=tby+22; const tl=[];
+  lines.forEach(([t,s,w,fam])=>{ if(!t){ty+=s;return;} tl.push(`<text x="${tbx+12}" y="${ty}" font-size="${s}" font-weight="${w}" fill="${w===600&&s===10?'#6b6f76':'#16181c'}" ${fam} ${s===10?'letter-spacing="1"':''}>${esc(s===10?t.toUpperCase():t)}</text>`); ty+=s+6;});
+  g.push(`<rect x="${tbx}" y="${tby}" width="${tbw}" height="${ty-tby+6}" fill="#fff" stroke="#16181c" stroke-width="1.5"/>`);
+  g=g.concat(tl);
+  // legend
+  const lgY=ty+30;
+  g.push(`<g ${F} font-size="11" fill="#16181c">
+    <rect x="${tbx}" y="${lgY}" width="10" height="10" fill="#fff" stroke="#16181c" stroke-width="1.6"/><path d="M${tbx+1},${lgY+16} L${tbx+9},${lgY+16} L${tbx+5},${lgY+24} Z" fill="#16181c"/>
+    <text x="${tbx+20}" y="${lgY+10}">F12, triangle shows aim (up the beam)</text>
+    <rect x="${tbx}" y="${lgY+34}" width="40" height="22" rx="2" fill="#fff" stroke="#16181c"/><text x="${tbx+20}" y="${lgY+50}" text-anchor="middle" ${M} font-size="12">001</text>
+    <text x="${tbx+50}" y="${lgY+44}">DMX start address</text><text x="${tbx+50}" y="${lgY+57}" fill="#6b6f76">#n = fixture number</text>
+    <rect x="${tbx}" y="${lgY+68}" width="8" height="8" fill="#3a3d43"/><text x="${tbx+20}" y="${lgY+76}">column</text>
+    <line x1="${tbx}" y1="${lgY+92}" x2="${tbx+30}" y2="${lgY+92}" stroke="#3a3d43" stroke-dasharray="5 3"/><text x="${tbx+38}" y="${lgY+96}">data chain</text>
+  </g>`);
+  const Hf=Math.max(H,lgY+120);
+  const defs=`<defs>${[0,1].map(s=>`<marker id="arr${s}" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="${s===0?'#c2410c':'#1d4ed8'}"/></marker>`).join('')}<marker id="arrK" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#16181c"/></marker></defs>`;
+  $('svgwrap').innerHTML=`<svg xmlns="http://www.w3.org/2000/svg" width="${totalW}" height="${Hf}" viewBox="0 0 ${totalW} ${Hf}" role="img" aria-label="DMX plan of ${patch.length} fixtures">${defs}${g.join('')}</svg>`;
+  // patch table
+  const rows=patch.map(f=>`<tr><td>${f.id}</td><td class="${f.side===0?'r':'l'}">${f.side===0?'Right':'Left'}</td><td>F${f.frame+1}</td><td>${f.face<0?'before beam':'after beam'}</td><td>${f.uni}</td><td>${pad3(f.addr)}</td><td>${f.addr}</td><td>${f.addr+1}</td><td>${f.addr+2}</td><td>${f.addr+3}</td></tr>`).join('');
+  $('patch').innerHTML=`<table><thead><tr><th>Fix</th><th>Line</th><th>Frame</th><th>Position</th><th>Univ</th><th>Address</th><th>R</th><th>G</th><th>B</th><th>W</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+function patchCsv(){return 'fixture,line,frame,position,universe,address,R,G,B,W\n'+patch.map(f=>[f.id,f.side===0?'Right':'Left','F'+(f.frame+1),f.face<0?'before beam':'after beam',f.uni,f.addr,f.addr,f.addr+1,f.addr+2,f.addr+3].join(',')).join('\n');}
+$('copyCsv').addEventListener('click',()=>{
+  const txt=patchCsv();
+  const done=()=>{$('copyMsg').textContent='Patch copied as CSV.';};
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(done).catch(()=>fallback());}else fallback();
+  function fallback(){const ta=document.createElement('textarea');ta.value=txt;ta.style.width='100%';ta.rows=6;$('patch').prepend(ta);ta.select();$('copyMsg').textContent='Copy blocked here: the CSV is selected above the table, press Ctrl+C.';}
+});
+
+/* ---------- views and tabs ---------- */
+function setView(v){
+  const u=world.userData; const zc=Math.min(u.len/2,30);
+  document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('on',b.dataset.view===v));
+  if(v==='eye'){camera.position.set(-0.6,1.65,-2.5);controls.target.set(0,u.E*0.9,Math.min(u.len,25));}
+  if(v==='over'){camera.position.set(u.W*2.0,u.R*2.0,-5);controls.target.set(0,u.E,Math.min(u.len*0.35,20));}
+  if(v==='up'){camera.position.set(0.2,1.6,zc);controls.target.set(0,u.R,zc+4);}
+  if(v==='side'){camera.position.set(0,u.R*0.55,-Math.max(9,u.W*1.6));controls.target.set(0,u.R*0.55,0);}
+  controls.update();
+}
+document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.view)));
+$('togglePanel').addEventListener('click',()=>$('panel').classList.toggle('closed'));
+function showPlan(on){$('plan').hidden=!on;$('views').hidden=on;$('tabPlan').classList.toggle('on',on);$('tab3d').classList.toggle('on',!on);if(on)drawPlan();try{location.hash=on?'plan':'';}catch(e){}}
+$('tab3d').addEventListener('click',()=>showPlan(false));$('tabPlan').addEventListener('click',()=>showPlan(true));
+
+/* ---------- inputs ---------- */
+let rebuildT=null;
+function onInput(e){
+  const k=e.target.id; if(!(k in DEFAULTS)) return;
+  if(BOOL.includes(k)) P[k]=e.target.checked; else if(NUM.includes(k)){const v=parseFloat(e.target.value); if(!isFinite(v)) return; P[k]=v;} else P[k]=e.target.value;
+  if(k==='colA'||k==='colB'){cA.set(P.colA);cB.set(P.colB);}
+  if(k==='house') updateAmbient();
+  if(k==='expo'||k==='spill'||k==='haze') updateLive();
+  if(STRUCT.has(k)){clearTimeout(rebuildT);rebuildT=setTimeout(build,120);}
+  else if(PATCH.has(k)){doPatch();setStatus();}
+  save();
+}
+$('panel').addEventListener('input',onInput);$('panel').addEventListener('change',onInput);
+$('fit').addEventListener('click',()=>{
+  const every=Math.max(1,Math.round(P.litEvery)), start=Math.max(1,Math.round(P.litStart))-1;
+  const litN=Math.ceil(Math.round(P.budget)/4); P.frames=Math.max(2,start+(litN-1)*every+1); $('frames').value=P.frames; build(); save();
+});
+$('reset').addEventListener('click',()=>{P=Object.assign({},DEFAULTS);toUI();cA.set(P.colA);cB.set(P.colB);build();setView('eye');save();});
+
+function resize(){const w=stage.clientWidth,h=stage.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/Math.max(1,h);camera.updateProjectionMatrix();}
+new ResizeObserver(resize).observe(stage);
+cA.set(P.colA);cB.set(P.colB);
+build();resize();setView('eye');connect();setStatus();
+if(location.hash==='#plan') showPlan(true);
+const reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const clock=new THREE.Clock();
+function tick(){
+  const t=reduce?0:clock.getElapsedTime(), live=useDmx();
+  for(const f of fixtures){ if(live) fromDmx(f); else effect(f,t); apply(f); }
+  controls.update();
+  if($('plan').hidden) renderer.render(scene,camera);
+  requestAnimationFrame(tick);
+}
+tick();
+})();
+</script>
+
+</body>
+</html>
